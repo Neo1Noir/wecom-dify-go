@@ -19,3 +19,22 @@ jobs:
         run: go test -race ./...
       - if: runner.os == 'Linux'
         run: docker build -t wecom-dify-go:test .
+      - name: Start container with a persistent volume
+        if: runner.os == 'Linux'
+        run: |
+          docker run -d --name bridge-smoke -p 127.0.0.1:18080:8080 \
+            -v bridge-ci-state:/data \
+            -e WECOM_CORP_ID=fixture-corp \
+            -e WECOM_KF_SECRET=fixture-secret \
+            -e WECOM_CALLBACK_TOKEN=fixture-token \
+            -e WECOM_ENCODING_AES_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \
+            -e DIFY_API_BASE_URL=https://dify.example.invalid/v1 \
+            -e DIFY_APP_API_KEY=fixture-key \
+            -e DIFY_USER_HASH_KEY=fixture-stable-user-hash-key \
+            wecom-dify-go:test
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/ready; then exit 0; fi
+            sleep 1
+          done
+          docker logs bridge-smoke
+          exit 1

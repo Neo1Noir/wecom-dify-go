@@ -370,3 +370,41 @@ func TestUnknownHTTPResponseIsNotRetriedAsASend(t *testing.T) {
 		t.Fatal("ambiguous send retried")
 	}
 }
+
+func TestNotificationIdentityDoesNotAssumeUniquePullTokens(t *testing.T) {
+	store := newStore(t)
+	if err := store.Notify("account", "same-pull-token", "event-1"); err != nil {
+		t.Fatal(err)
+	}
+	store.Notify("account", "same-pull-token", "event-1")
+	store.Notify("account", "same-pull-token", "event-2")
+	var n int
+	if err := store.DB.QueryRow(`SELECT count(*) FROM notifications`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected two distinct callbacks and one deduplicated retry, got %d", n)
+	}
+}
+
+func TestUnsupportedAndHumanCommandsBypassModel(t *testing.T) {
+	for _, kind := range []string{"image", "human"} {
+		store := newStore(t)
+		message := incoming("one", "user", "human")
+		if kind == "image" {
+			message.Type = "image"
+		}
+		store.Ingest(Notification{Account: "account"}, SyncPage{Messages: []Message{message}})
+		job, err := store.Claim(map[string]bool{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		chat := &fakeChat{}
+		platform := &fakePlatform{state: 1}
+		server := &Server{Config: DemoConfig(""), Store: store, Platform: platform, Chat: chat, Log: slog.Default()}
+		server.process(context.Background(), job)
+		if chat.calls != 0 || len(platform.sent) != 1 {
+			t.Fatalf("%s called the model or failed to reply", kind)
+		}
+	}
+}
