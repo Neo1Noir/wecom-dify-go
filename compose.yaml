@@ -1,0 +1,14 @@
+services:
+  middleware:
+    build: .
+    env_file: .env
+    environment:
+      SQLITE_PATH: /data/state.db
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - state:/data
+    restart: unless-stopped
+    stop_grace_period: 20s
+volumes:
+  state:
